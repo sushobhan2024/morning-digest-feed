@@ -60,7 +60,7 @@ def fetch_latest_html():
 def parse_articles(html):
     """
     Turn the newsletter HTML into a flat list of articles:
-    [{title, summary}, ...]
+    [{title, summary, link}, ...]
     """
     soup = BeautifulSoup(html, "html.parser")
     articles = []
@@ -76,7 +76,14 @@ def parse_articles(html):
         subhead_div = article_div.find("div", class_="subhead")
         summary = subhead_div.get_text(strip=True) if subhead_div else ""
 
-        articles.append({"title": title, "summary": summary})
+        link_tag = headline_div.find_parent("a")
+        link = os.environ.get("FEED_SITE_URL", "")
+        if link_tag and link_tag.get("originalsrc"):
+            link = link_tag["originalsrc"]
+        elif link_tag and link_tag.get("href"):
+            link = link_tag["href"]
+
+        articles.append({"title": title, "summary": summary, "link": link})
 
     return articles
 
@@ -95,6 +102,7 @@ def build_feed(articles, feed_subject):
         fe = fg.add_entry()
         fe.title(a["title"])
         fe.description(a["summary"])
+        fe.link(href=a["link"])
         fe.pubDate(format_datetime(now))
 
     return fg
