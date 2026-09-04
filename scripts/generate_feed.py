@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-"""
-Step 0 pipeline: fetch the newsletter via IMAP, parse it into articles,
-and generate a valid RSS 2.0 feed (docs/feed.xml) for GitHub Pages to serve.
-
-Configure via environment variables (set as GitHub Secrets in Actions):
-  IMAP_HOST      - e.g. imap.gmail.com
-  IMAP_PORT      - default 993
-  IMAP_USER      - your email address / login
-  IMAP_PASS      - an app-specific password (NOT your main password)
-  SENDER_FILTER  - substring to match the newsletter's From address
-  MAILBOX        - IMAP folder to search, default "INBOX"
-  FEED_TITLE     - default "POPROX News"
-  FEED_SITE_URL  - the GitHub Pages URL this feed will be hosted under
-
-You WILL need to adjust `parse_articles()` below once you can see your
-actual newsletter's HTML — this starting version uses a generic
-H1/H2/H3-based heuristic.
-"""
-
 import os
 import email
 import imaplib
@@ -31,8 +11,7 @@ IMAP_HOST = os.environ.get("IMAP_HOST", "imap.gmail.com")
 IMAP_PORT = int(os.environ.get("IMAP_PORT", "993"))
 SENDER_FILTER = os.environ.get("SENDER_FILTER", "")
 MAILBOX = os.environ.get("MAILBOX", "INBOX")
-FEED_TITLE = os.environ.get("FEED_TITLE", "POPROX News")
-FEED_SITE_URL = os.environ.get("FEED_SITE_URL", "https://example.github.io/poprox-rss-feed/")
+FEED_TITLE = os.environ.get("FEED_TITLE", "Morning Digest News")
 
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "..", "docs", "feed.xml")
 
@@ -42,7 +21,7 @@ def fetch_latest_html():
     imap_user = os.environ["IMAP_USER"]
     imap_pass = os.environ["IMAP_PASS"]
 
-    conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+    conn = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=30)
     conn.login(imap_user, imap_pass)
     conn.select(MAILBOX)
 
@@ -81,13 +60,7 @@ def fetch_latest_html():
 def parse_articles(html):
     """
     Turn the newsletter HTML into a flat list of articles:
-    [{title, summary, link}, ...]
-
-    Matches POPROX's actual newsletter structure: each article is a
-    <div class="article"> containing a <div class="headline">, a
-    <div class="subhead">, and a linked image. The real article URL is
-    in the <a> tag's originalsrc attribute (href is wrapped in an
-    Outlook safelinks redirect).
+    [{title, summary}, ...]
     """
     soup = BeautifulSoup(html, "html.parser")
     articles = []
@@ -103,22 +76,16 @@ def parse_articles(html):
         subhead_div = article_div.find("div", class_="subhead")
         summary = subhead_div.get_text(strip=True) if subhead_div else ""
 
-        link_tag = headline_div.find_parent("a")
-        link = FEED_SITE_URL
-        if link_tag and link_tag.get("originalsrc"):
-            link = link_tag["originalsrc"]
-        elif link_tag and link_tag.get("href"):
-            link = link_tag["href"]
-
-        articles.append({"title": title, "summary": summary, "link": link})
+        articles.append({"title": title, "summary": summary})
 
     return articles
 
 
 def build_feed(articles, feed_subject):
+    feed_site_url = os.environ["FEED_SITE_URL"]
     fg = FeedGenerator()
     fg.title(FEED_TITLE)
-    fg.link(href=FEED_SITE_URL, rel="alternate")
+    fg.link(href=feed_site_url, rel="alternate")
     fg.description(feed_subject or "Personal newsletter feed")
     fg.language("en")
 
@@ -128,7 +95,6 @@ def build_feed(articles, feed_subject):
         fe = fg.add_entry()
         fe.title(a["title"])
         fe.description(a["summary"])
-        fe.link(href=a["link"])
         fe.pubDate(format_datetime(now))
 
     return fg
